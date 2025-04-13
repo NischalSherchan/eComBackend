@@ -1,6 +1,7 @@
 import { User } from "../model/user.model.js";
 import jwt from "jsonwebtoken";
 import bcryptjs from "bcryptjs";
+import fs from 'fs'
 
 const userRegister = async (req, res) => {
   try {
@@ -8,24 +9,28 @@ const userRegister = async (req, res) => {
     const { name, email, password } = req.body;
     const isExist = await User.findOne({ email: email });
     if (isExist) {
-      res.status(409).json({
+      if(req.file){
+        fs.unlinkSync(req.file?.Path);
+      }
+      return res.status(409).json({
         message: "this Email already has account",
       });
     }
-    const photoUrl = `public/img/${req.file.filename}`;
+
+    const photoUrl =  req.file ? `/public/images/${req.file?.filename}` : null;
     const user = await User.create({
       name,
       email,
       password,
-
-      profile_pic: photoUrl,
+       profile_pic: photoUrl,
     });
 
     const createUser = await User.findById(user._id).select(
       "-password -refreshToken"
     );
     if (!createUser) {
-      res.status(500).json({
+      fs.unlinkSync(req.file?.path)
+      return res.status(500).json({
         message: "some error occured while registering",
       });
     }
@@ -34,9 +39,12 @@ const userRegister = async (req, res) => {
       data: createUser,
     });
   } catch (err) {
+    if(req.file){
+      fs.unlinkSync(req.file?.path);
+    }
     console.log(`error in register: ${err}`);
-    res.status(500).json({
-      message: "something went wrong",
+    return res.status(500).json({
+      message: "error registering user",
     });
   }
 };
@@ -46,9 +54,9 @@ const userRegister = async (req, res) => {
 const userLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email) {
+    if (!email || !password) {
       return res.status(400).json({
-        message: "email is required",
+        message: "email and password is required",
       });
     }
     const user = await User.findOne({ email });
@@ -67,16 +75,20 @@ const userLogin = async (req, res) => {
     const  accessToken  =  user.generateAccessToken();
     const  refreshToken  = user.generateRefreshToken();
 
+    
+    
+    user.refreshToken = refreshToken;
+    await user.save();
 
- 
     const loggedInUser = await User.findById(user._id).select(
-      "-password -refresh_token"
+      "-password -refreshToken"
     );
 
     const options = {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
     };
+
     return res
       .status(200)
       .cookie("accessToken", accessToken, options)
@@ -84,6 +96,7 @@ const userLogin = async (req, res) => {
       .json({
         message: "successfully logged in",
         data: loggedInUser,
+        accessToken
       });
   } catch (err) {
     console.log(`some thing went worng: ${err}`);
@@ -91,6 +104,9 @@ const userLogin = async (req, res) => {
     res.status(500).json({ message: "ya hora" });
   }
 };
+
+
+
 const getUser = async (req, res) => {
   try {
     res.status(200).json({
@@ -112,7 +128,7 @@ const getUser = async (req, res) => {
 
 //     const token = req.cookie?.refresh_token;
 //     const decodeRefreshToken = Jwt.verify(token,process.env.ACCESS_TOKEN_SECRET);
-//     const user = await User.findById(decodeRefreshToken?._id).select("-password -refresh_token");
+//     const user = await User.findById(decodeRefreshToken?._id).select("-password refreshToken");
 
 //     generateAccessAndRefreshToken(user)
 //       return res.status(200).json({
@@ -161,7 +177,7 @@ const refreshTokenAccess = async (req, res) => {
     }
     const decodeToken = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET);
     const user = await User.findById(decodeToken?._id).select(
-      "-password -refresh_Token"
+      "-password -refreshToken"
     );
     // const { accessToken, newRefreshToken } =
     //   await generateAccessAndRefreshToken(user._id);
@@ -173,11 +189,11 @@ const refreshTokenAccess = async (req, res) => {
     };
     return res
       .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", newRefreshToken, options)
       .json({
         message: "token successfully generated",
       })
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", newRefreshToken, options);
   } catch (error) {
     res.status(500).json({
       message: "token not generated",
@@ -254,11 +270,13 @@ const generateRefreshToken = async (userId) => {
     if (!user) {
       return console.log(`user not found`);
     }
-    const refreshToken = user.generateRefreshToken();
-    user.refresh_token = refreshToken;
+    const refresh_Token = user.generateRefreshToken();
+    user.refreshToken = refresh_Token;
     await user.save({ validateBeforeSave: false });
-    return refreshToken;
-  } catch (error) {}
+    return refresh_Token;
+  } catch (error) {
+    console.log(`error generating refresh token,${error}`);
+  }
 };
 
 const userLogout = async (req, res) => {
@@ -305,16 +323,17 @@ const changeProfilePic = async (req, res) => {
       });
     }
     if (user.profile_pic) {
-      const oldProfilePic = Path2D.join("public", user.profile_pic);
+      const oldProfilePic = Path.join("public", user.profile_pic);
       if (fs.existsSync(oldProfilePic)) {
         fs.unlinkSync(oldProfilePic);
       }
     }
-    const newPhoto = "public/img/${req.file.filename}";
-    await user.save();
+    const photoPath = "public/images/${req.file.filename}";
+    user.profile_pic = photoPath
 
-    const newUser = await User.findById(user).select(
-      "-password -refresh_token"
+    await user.save() 
+    const updatedUser = await User.findById(user).select(
+      "-password refreshToken"
     );
 
     res.status(200).json({
@@ -350,10 +369,10 @@ const changeUserDetails = async (req,res)=>{
       new:true
     }
 
-  ).select("-password -refresh_token")
+  ).select("-password -refreshToken")
   return res.status(200).json({
     message:"change successful",
-    data:User
+    data:user
   })
 
   } catch (error) {

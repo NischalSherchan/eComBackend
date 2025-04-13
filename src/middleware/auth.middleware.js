@@ -4,19 +4,21 @@ import { User } from "../model/user.model.js";
 
 export const VerifyToken = async (req, res, next) => {
   try {
-   const token = req.cookies?.accessToken;
+    const authHeader = req.header("Authorization");
+   const token = req.cookies?.accessToken || (authHeader && authHeader.replace('Bearer ',''))
+
     if (!token) {
         return res.status(401).json({
-        message: "kina milyana",
+        message: "user not herer found",
       });
     }
 
     const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
-    const user = await User.findById(decodedToken?._id).select("-password -refresh_token");
+    const user = await User.findById(decodedToken?._id).select("-password -refreshToken");
     if (!user) {
       return res.status(404).json({
-        message: "User not found",
+        message: "User not found in auth",
       });
     }
 
@@ -24,7 +26,7 @@ export const VerifyToken = async (req, res, next) => {
     next();
   } catch (error) {
     return res.status(401).json({
-      message: `Error: ${error.message}`,
+      message123e: `Error: ${error.message}`,
     });
   }
 };

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-const categories = ['Men', 'Women', 'Children']
+const categories = ['Citrus Fruit', 'Berries', 'Tropical fruits']
 const productSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -28,11 +28,11 @@ const productSchema = new mongoose.Schema({
     type: Number,
     required: true,
     default: 0
-  },
+  }
+
 },
   {
-  timestamp:true,
-  },
-)
+    timestamps: true
+  })
 
 export const Product = mongoose.model("Product",productSchema)
